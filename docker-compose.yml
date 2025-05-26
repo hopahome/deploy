@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:17.4
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: insecure
+      POSTGRES_DB: smart-home
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.0-rc1-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis:/data
+    restart: unless-stopped
+
+  auth-service:
+    image: cr.yandex/crpeotdomuljuu8m735b/auth:latest
+    container_name: auth-service
+    ports:
+      - "8081:8080"
+    environment:
+      PORT: 8080
+      POSTGRES_URL: postgresql://user:insecure@postgres:5432/smart-home
+      REDIS_URL: redis:6379
+      SMTP_HOST: <host>
+      SMTP_PORT: <port>
+      SMTP_USERNAME: <username>
+      SMTP_PASSWORD: <password>
+      GIN_MODE: release
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  devices-api-service:
+    image: cr.yandex/crpeotdomuljuu8m735b/adapter:latest
+    container_name: devices-api-service
+    ports:
+      - "8082:8080"
+    environment:
+      PORT: 8080
+      POSTGRES_URL: postgresql://user:insecure@postgres:5432/smart-home
+      GIN_MODE: release
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      - postgres
+      - auth-service
+    restart: unless-stopped
+
+  token-issuer:
+    image: cr.yandex/crpeotdomuljuu8m735b/token-issuer:latest
+    platform: linux/amd64
+    container_name: token-issuer
+    ports:
+      - "8083:8080"
+    environment:
+      PORT: 8080
+    volumes:
+      - ./keys:/app/keys:ro
+    restart: unless-stopped
+
+  ca:
+    image: cr.yandex/crpeotdomuljuu8m735b/ca:latest
+    platform: linux/amd64
+    container_name: ca
+    ports:
+      - "8084:8080"
+    environment:
+      PORT: 8080
+      REDIS_URL: redis:6379
+      POSTGRES_URL: postgresql://user:insecure@postgres:5432/smart-home
+      CA_CERT_PATH: certs/ca.crt
+      CA_KEY_PATH: certs/ca.key
+    volumes:
+      - ./certs:/app/certs:ro
+      - ./keys:/app/keys:ro
+    restart: unless-stopped
+
+  web:
+    image: cr.yandex/crpeotdomuljuu8m735b/web:latest
+    container_name: web
+    ports:
+      - "8888:80"
+    restart: unless-stopped
